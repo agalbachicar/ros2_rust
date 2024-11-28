@@ -103,12 +103,12 @@ struct SimplePublisherNode {
     publisher: Arc<Publisher<StringMsg>>,
 }
 impl SimplePublisherNode {
-    fn new(context: &context) -> result<self, RclrsError> {
+    fn new(context: &Context) -> Result<Self, RclrsError> {
         let node = create_node(context, "simple_publisher").unwrap();
         let publisher = node
-            .create_publisher("publish_hello", qos_profile_default)
+            .create_publisher("publish_hello", QOS_PROFILE_DEFAULT)
             .unwrap();
-        ok(self { node, publisher })
+        Ok(Self { node, publisher })
     }
     fn publish_data(&self, increment: i32) -> Result<i32, RclrsError> {
         let msg: StringMsg = StringMsg {
