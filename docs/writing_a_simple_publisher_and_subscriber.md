@@ -265,7 +265,7 @@ Now, by recompiling the package from the previous chapter and making it usable:
 ```sh
 cd WORKSPACE
 colcon build
-source install/setub.bash
+source install/setup.bash
 ```
 Running the node will look like this:
 ```sh
