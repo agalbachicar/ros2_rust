@@ -24,8 +24,8 @@ impl Timer {
         let timer_init_result = unsafe {
             // SAFETY: Getting a default value is always safe.
             rcl_timer = rcl_get_zero_initialized_timer();
+            let mut rcl_clock = clock.get_rcl_clock().lock().unwrap();
             let allocator = rcutils_get_default_allocator();
-            let mut rcl_clock = clock.rcl_clock.lock().unwrap();
             let mut rcl_context = context.handle.rcl_context.lock().unwrap();
             let callback: rcl_timer_callback_t = None;
             // Function will return Err(_) only if there isn't enough memory to allocate a clock
@@ -48,7 +48,7 @@ impl Timer {
     }
 
     /// Gets the period of the timer in nanoseconds
-    pub fn timer_period_ns(&self) -> Result<i64, RclrsError> {
+    pub fn get_timer_period_ns(&self) -> Result<i64, RclrsError> {
         let mut timer_period_ns = 0;
         let get_period_result = unsafe {
             let rcl_timer = self.rcl_timer.lock().unwrap();
@@ -145,8 +145,6 @@ impl Timer {
         })
     }
     // handle() -> RCLC Timer Type
-
-    // clock() -> Clock ?
 }
 
 /// 'Drop' trait implementation to be able to release the resources
@@ -224,7 +222,7 @@ mod tests {
         let dut = Timer::new(&clock, &context, period);
         assert!(dut.is_ok());
         let dut = dut.unwrap();
-        let period_result = dut.timer_period_ns();
+        let period_result = dut.get_timer_period_ns();
         assert!(period_result.is_ok());
         let period_result = period_result.unwrap();
         assert_eq!(period_result, 1e6 as i64);
