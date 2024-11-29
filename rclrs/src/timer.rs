@@ -14,11 +14,11 @@ pub struct Timer {
 
 impl Timer {
     /// Creates a new timer (constructor)
-    pub fn new(clock: &Clock, context: &Context, period: i64) -> Result<Timer, RclrsError> {
+    pub fn new(clock: &Clock, context: Context, period: i64) -> Result<Timer, RclrsError> {
         Self::with_callback(clock, context, period, None)
     }
 
-    pub fn with_callback(clock: &Clock, context: &Context, period: i64, callback: Option<TimerCallback>) -> Result<Timer, RclrsError> {
+    pub fn with_callback(clock: &Clock, context: Context, period: i64, callback: Option<TimerCallback>) -> Result<Timer, RclrsError> {
         let mut rcl_timer;
         let timer_init_result = unsafe {
             // SAFETY: Getting a default value is always safe.
@@ -181,7 +181,7 @@ mod tests {
         let context = Context::new(vec![]).unwrap();
         let period: i64 = 1e6 as i64;  // 1 milliseconds.
 
-        let dut = Timer::new(&clock, &context, period);
+        let dut = Timer::new(&clock, context, period);
         assert!(dut.is_ok());
     }
 
@@ -191,7 +191,7 @@ mod tests {
         let context = Context::new(vec![]).unwrap();
         let period: i64 = 1e6 as i64;  // 1 milliseconds.
 
-        let dut = Timer::new(&clock, &context, period);
+        let dut = Timer::new(&clock, context, period);
         assert!(dut.is_ok());
     }
 
@@ -209,7 +209,7 @@ mod tests {
         let context = Context::new(vec![]).unwrap();
         let period: i64 = 1e6 as i64;  // 1 milliseconds..
 
-        let dut = Timer::new(&clock, &context, period);
+        let dut = Timer::new(&clock, context, period);
         assert!(dut.is_ok());
     }
 
@@ -219,7 +219,7 @@ mod tests {
         let context = Context::new(vec![]).unwrap();
         let period: i64 = 1e6 as i64;  // 1 milliseconds.
 
-        let dut = Timer::new(&clock, &context, period);
+        let dut = Timer::new(&clock, context, period);
         assert!(dut.is_ok());
         let dut = dut.unwrap();
         let period_result = dut.get_timer_period_ns();
@@ -234,7 +234,7 @@ mod tests {
         let context = Context::new(vec![]).unwrap();
         let period: i64 = 1e6 as i64;  // 1 milliseconds.
 
-        let dut = Timer::new(&clock, &context, period);
+        let dut = Timer::new(&clock, context, period);
         assert!(dut.is_ok());
         let dut = dut.unwrap();
         assert!(dut.is_canceled().is_ok());
@@ -252,7 +252,7 @@ mod tests {
         let period_ns: i64 = 2e6 as i64;  // 2 milliseconds.
         let sleep_period_ms = time::Duration::from_millis(1);
 
-        let dut = Timer::new(&clock, &context, period_ns);
+        let dut = Timer::new(&clock, context, period_ns);
         assert!(dut.is_ok());
         let dut = dut.unwrap();
         thread::sleep(sleep_period_ms);
@@ -267,7 +267,7 @@ mod tests {
         let clock = Clock::steady();
         let context = Context::new(vec![]).unwrap();
         let period_ns: i64 = 2e6 as i64;  // 2 milliseconds.
-        let dut = Timer::new(&clock, &context, period_ns);
+        let dut = Timer::new(&clock, context, period_ns);
         assert!(dut.is_ok());
         let dut = dut.unwrap();
         let time_until_next_call = dut.time_until_next_call();
@@ -282,7 +282,7 @@ mod tests {
         let clock = Clock::steady();
         let context = Context::new(vec![]).unwrap();
         let period_ns: i64 = 2e6 as i64;  // 2 milliseconds.
-        let mut dut = Timer::new(&clock, &context, period_ns).unwrap();
+        let mut dut = Timer::new(&clock, context, period_ns).unwrap();
         let elapsed = period_ns - dut.time_until_next_call().unwrap();
         assert!(elapsed < tolerance , "elapsed before reset: {}", elapsed);
         thread::sleep(time::Duration::from_millis(1));
@@ -297,7 +297,7 @@ mod tests {
         let clock = Clock::steady();
         let context = Context::new(vec![]).unwrap();
         let period_ns: i64 = 1e6 as i64;  // 1 millisecond.
-        let mut dut = Timer::new(&clock, &context, period_ns).unwrap();
+        let mut dut = Timer::new(&clock, context, period_ns).unwrap();
         let elapsed = period_ns - dut.time_until_next_call().unwrap();
         assert!(elapsed < tolerance , "elapsed before reset: {}", elapsed);
 
@@ -317,7 +317,7 @@ mod tests {
         let clock = Clock::steady();
         let context = Context::new(vec![]).unwrap();
         let period_ns: i64 = 1e6 as i64;  // 1 millisecond.
-        let dut = Timer::new(&clock, &context, period_ns).unwrap();
+        let dut = Timer::new(&clock, context, period_ns).unwrap();
 
         let is_ready = dut.is_ready();
         assert!(is_ready.is_ok());
@@ -337,7 +337,7 @@ mod tests {
         let period_ns: i64 = 1e6 as i64;  // 1 millisecond.
         let foo = Arc::new(Mutex::new(0i64));
         let foo_callback = foo.clone();
-        let dut = Timer::with_callback(&clock, &context, period_ns, Some(Box::new(move |x| *foo_callback.lock().unwrap() = x ))).unwrap();
+        let dut = Timer::with_callback(&clock, context, period_ns, Some(Box::new(move |x| *foo_callback.lock().unwrap() = x ))).unwrap();
         dut.callback.unwrap()(123);
         assert_eq!(*foo.lock().unwrap(), 123);
     }
