@@ -4,11 +4,13 @@ use crate::{
 use std::sync::{Arc, Mutex};
 
 
-
+/// Trait that every callback use with a timer needs to implement
 pub trait TimerCallback {
+    /// Function that implements the actual functionality when you execute the callback
     fn call(time_since_last_callback_ns: i64);
 }
 
+/// Struct that implements a timer and wraps 'rcl_timer_t'
 #[derive(Debug)]
 pub struct Timer {
     rcl_timer: Arc<Mutex<rcl_timer_t>>,
@@ -16,6 +18,7 @@ pub struct Timer {
 }
 
 impl Timer {
+    /// Creates a new timer (constructor)
     pub fn new(clock: &Clock, context: &Context, period: i64) -> Result<Timer, RclrsError> {
         let mut rcl_timer;
         let timer_init_result = unsafe {
@@ -44,6 +47,7 @@ impl Timer {
         })
     }
 
+    /// Gets the period of the timer in nanoseconds
     pub fn timer_period_ns(&self) -> Result<i64, RclrsError> {
         let mut timer_period_ns = 0;
         let get_period_result = unsafe {
@@ -58,12 +62,14 @@ impl Timer {
         })
     }
 
+    /// Cancels the timer, stopping the execution of the callback
     pub fn cancel(&self) -> Result<(), RclrsError> {
         let mut rcl_timer = self.rcl_timer.lock().unwrap();
         let cancel_result = unsafe { rcl_timer_cancel(&mut *rcl_timer) };
         to_rclrs_result(cancel_result)
     }
 
+    /// Checks whether the timer is canceled or not
     pub fn is_canceled(&self) -> Result<bool, RclrsError> {
         let mut is_canceled = false;
         let is_canceled_result = unsafe {
@@ -78,6 +84,7 @@ impl Timer {
         })
     }
 
+    /// Retrieves the time since the last call to the callback
     pub fn time_since_last_call(&self) -> Result<i64, RclrsError> {
         let mut time_value_ns: i64 = 0;
         let time_since_last_call_result = unsafe {
@@ -92,6 +99,7 @@ impl Timer {
         })
     }
 
+    /// Retrieves the time until the next call of the callback
     pub fn time_until_next_call(&self) -> Result<i64, RclrsError> {
         let mut time_value_ns: i64 = 0;
         let time_until_next_call_result = unsafe {
@@ -106,18 +114,21 @@ impl Timer {
         })
     }
 
+    /// Resets the timer, setting the last call time to now
     pub fn reset(&mut self) -> Result<(), RclrsError>
     {
         let mut rcl_timer = self.rcl_timer.lock().unwrap();
         to_rclrs_result(unsafe {rcl_timer_reset(&mut *rcl_timer)})
     }
 
+    /// Executes the callback of the timer (this is triggered by the executor or the node directly)
     pub fn call(&mut self) -> Result<(), RclrsError>
     {
         let mut rcl_timer = self.rcl_timer.lock().unwrap();
         to_rclrs_result(unsafe {rcl_timer_call(&mut *rcl_timer)})
     }
 
+    /// Checks if the timer is ready (not canceled)
     pub fn is_ready(&self) -> Result<bool, RclrsError>
     {
         let (is_ready, is_ready_result) = unsafe {
@@ -138,6 +149,7 @@ impl Timer {
     // clock() -> Clock ?
 }
 
+/// 'Drop' trait implementation to be able to release the resources
 impl Drop for rcl_timer_t {
     fn drop(&mut self) {
         // SAFETY: No preconditions for this function
