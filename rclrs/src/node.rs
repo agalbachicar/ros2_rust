@@ -363,7 +363,7 @@ impl Node {
             }
         }
         let context = Context::new(vec![]).unwrap();
-        let timer = Timer::new(&clock_used, context, timer_period_ns);
+        let timer = Timer::new(&clock_used, &context, timer_period_ns);
         let timer = Arc::new(timer.unwrap());
         self.timers_mtx.lock().unwrap().push(Arc::downgrade(&timer) as Weak<Timer>);
         timer
