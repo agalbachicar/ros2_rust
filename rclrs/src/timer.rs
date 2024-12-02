@@ -33,6 +33,8 @@ pub struct Timer {
     pub(crate) handle: TimerHandle,
     /// The callback function that runs when the timer is due.
     callback: Arc<Mutex<Option<AnyTimerCallback>>>,
+    /// What was the last time lapse between calls to this timer
+    last_elapse: Mutex<Duration>,
     /// We hold onto the Timer's clock for the whole lifespan of the Timer to
     /// make sure the underlying `rcl_clock_t` remains valid.
     pub(crate) in_use_by_wait_set: Arc<AtomicBool>,
@@ -79,6 +81,18 @@ impl Timer {
         Ok(is_canceled)
     }
 
+    /// Get the last time lapse between calls to the timer.
+    ///
+    /// This is different from [`Self::time_since_last_call`] because it remains
+    /// constant between calls to the Timer.
+    ///
+    /// It keeps track of the what the value of [`Self::time_since_last_call`]
+    /// was immediately before the most recent call to the callback. This will
+    /// be [`Duration::ZERO`] if the `Timer` has never been triggered.
+    pub fn last_elapse(&self) -> Duration {
+        *self.last_elapse.lock().unwrap()
+    }
+
     /// Retrieves the time since the last call to the callback
     pub fn time_since_last_call(&self) -> Result<Duration, RclrsError> {
         let mut time_value_ns: i64 = 0;
@@ -119,6 +133,11 @@ impl Timer {
         };
 
         Ok(is_ready)
+    }
+
+    /// Get the clock that this timer runs on.
+    pub fn clock(&self) -> &Clock {
+        &self.handle.clock
     }
 
     /// Set a new callback for the timer. This will return whatever callback
@@ -219,6 +238,7 @@ impl Timer {
         let timer = Timer {
             handle: TimerHandle { rcl_timer, clock },
             callback: Arc::new(Mutex::new(Some(callback))),
+            last_elapse: Mutex::new(Duration::ZERO),
             in_use_by_wait_set: Arc::new(AtomicBool::new(false)),
         };
         Ok(timer)
@@ -227,6 +247,15 @@ impl Timer {
     /// Force the timer to be called, even if it is not ready to be triggered yet.
     /// We could consider making this public, but the behavior may confuse users.
     fn call(&self) -> Result<(), RclrsError> {
+        // Keep track of the time elapsed since the last call. We need to run
+        // this before we trigger rcl_call.
+        let last_elapse = self.time_since_last_call().unwrap_or(Duration::ZERO);
+        *self.last_elapse.lock().unwrap() = last_elapse;
+
+        if let Err(err) = self.rcl_call() {
+            log_error!("timer", "Unable to call timer: {err:?}",);
+        }
+
         let Some(callback) = self.callback.lock().unwrap().take() else {
             log_error!(
                 "timer".once(),
@@ -251,10 +280,6 @@ impl Timer {
                 // Nothing to do here, just restore the callback.
                 self.restore_callback(AnyTimerCallback::None);
             }
-        }
-
-        if let Err(err) = self.rcl_call() {
-            log_error!("timer", "Unable to call timer: {err:?}",);
         }
 
         Ok(())
