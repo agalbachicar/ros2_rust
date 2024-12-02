@@ -68,6 +68,6 @@ where
     Func: FnOnce(Time) + Send + 'static,
 {
     fn into_oneshot_timer_callback(self) -> AnyTimerCallback {
-        AnyTimerCallback::OneShot(Box::new(move |t| self(t.clock.now())))
+        AnyTimerCallback::OneShot(Box::new(move |t| self(t.handle.clock.now())))
     }
 }

@@ -33,13 +33,22 @@ pub use timer_options::*;
 // TODO: callback type prevents us from making the Timer implement the Debug trait.
 // #[derive(Debug)]
 pub struct Timer {
-    pub(crate) rcl_timer: Arc<Mutex<rcl_timer_t>>,
+    pub(crate) handle: TimerHandle,
     /// The callback function that runs when the timer is due.
     callback: Arc<Mutex<Option<AnyTimerCallback>>>,
     /// We hold onto the Timer's clock for the whole lifespan of the Timer to
     /// make sure the underlying `rcl_clock_t` remains valid.
-    clock: Clock,
     pub(crate) in_use_by_wait_set: Arc<AtomicBool>,
+}
+
+/// Manage the lifecycle of an `rcl_timer_t`, including managing its dependency
+/// on `rcl_clock_t` by ensuring that this dependency are [dropped after][1]
+/// the `rcl_timer_t`.
+///
+/// [1]: <https://doc.rust-lang.org/reference/destructors.html>
+pub(crate) struct TimerHandle {
+    pub(crate) rcl_timer: Arc<Mutex<rcl_timer_t>>,
+    clock: Clock,
 }
 
 impl Timer {
@@ -47,7 +56,7 @@ impl Timer {
     pub fn get_timer_period(&self) -> Result<Duration, RclrsError> {
         let mut timer_period_ns = 0;
         unsafe {
-            let rcl_timer = self.rcl_timer.lock().unwrap();
+            let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_period(&*rcl_timer, &mut timer_period_ns)
         }.ok()?;
 
@@ -56,7 +65,7 @@ impl Timer {
 
     /// Cancels the timer, stopping the execution of the callback
     pub fn cancel(&self) -> Result<(), RclrsError> {
-        let mut rcl_timer = self.rcl_timer.lock().unwrap();
+        let mut rcl_timer = self.handle.rcl_timer.lock().unwrap();
         let cancel_result = unsafe { rcl_timer_cancel(&mut *rcl_timer) }.ok()?;
         Ok(cancel_result)
     }
@@ -65,7 +74,7 @@ impl Timer {
     pub fn is_canceled(&self) -> Result<bool, RclrsError> {
         let mut is_canceled = false;
         unsafe {
-            let rcl_timer = self.rcl_timer.lock().unwrap();
+            let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_is_canceled(&*rcl_timer, &mut is_canceled)
         }.ok()?;
         Ok(is_canceled)
@@ -75,7 +84,7 @@ impl Timer {
     pub fn time_since_last_call(&self) -> Result<Duration, RclrsError> {
         let mut time_value_ns: i64 = 0;
         unsafe {
-            let rcl_timer = self.rcl_timer.lock().unwrap();
+            let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_time_since_last_call(&*rcl_timer, &mut time_value_ns)
         }.ok()?;
 
@@ -86,7 +95,7 @@ impl Timer {
     pub fn time_until_next_call(&self) -> Result<Duration, RclrsError> {
         let mut time_value_ns: i64 = 0;
         unsafe {
-            let rcl_timer = self.rcl_timer.lock().unwrap();
+            let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_time_until_next_call(&*rcl_timer, &mut time_value_ns)
         }.ok()?;
 
@@ -95,7 +104,7 @@ impl Timer {
 
     /// Resets the timer.
     pub fn reset(&self) -> Result<(), RclrsError> {
-        let mut rcl_timer = self.rcl_timer.lock().unwrap();
+        let mut rcl_timer = self.handle.rcl_timer.lock().unwrap();
         unsafe { rcl_timer_reset(&mut *rcl_timer) }.ok()
     }
 
@@ -103,7 +112,7 @@ impl Timer {
     pub fn is_ready(&self) -> Result<bool, RclrsError> {
         let is_ready = unsafe {
             let mut is_ready: bool = false;
-            let rcl_timer = self.rcl_timer.lock().unwrap();
+            let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_is_ready(&*rcl_timer, &mut is_ready).ok()?;
             is_ready
         };
@@ -173,23 +182,27 @@ impl Timer {
         callback: AnyTimerCallback,
     ) -> Result<Timer, RclrsError> {
         let period = period.as_nanos() as i64;
-        let mut rcl_clock = clock.get_rcl_clock().lock().unwrap();
-        let mut rcl_context = context.rcl_context.lock().unwrap();
 
         // Callbacks will be handled at the rclrs layer.
         let rcl_timer_callback: rcl_timer_callback_t = None;
 
-        let mut rcl_timer;
+        let rcl_timer = Arc::new(Mutex::new(
+            // SAFETY: Zero-initializing a timer is always safe
+            unsafe { rcl_get_zero_initialized_timer() }
+        ));
+
         unsafe {
+            let mut rcl_clock = clock.get_rcl_clock().lock().unwrap();
+            let mut rcl_context = context.rcl_context.lock().unwrap();
+
             // SAFETY: Getting a default value is always safe.
-            rcl_timer = rcl_get_zero_initialized_timer();
             let allocator = rcutils_get_default_allocator();
 
             let _lifecycle = ENTITY_LIFECYCLE_MUTEX.lock().unwrap();
             // SAFETY: We lock the lifecycle mutex since rcl_timer_init is not
             // thread-safe.
             rcl_timer_init(
-                &mut rcl_timer,
+                &mut *rcl_timer.lock().unwrap(),
                 &mut *rcl_clock,
                 &mut *rcl_context,
                 period,
@@ -199,9 +212,8 @@ impl Timer {
         }.ok()?;
 
         let timer = Timer {
-            rcl_timer: Arc::new(Mutex::new(rcl_timer)),
+            handle: TimerHandle { rcl_timer, clock },
             callback: Arc::new(Mutex::new(Some(callback))),
-            clock: clock.clone(),
             in_use_by_wait_set: Arc::new(AtomicBool::new(false)),
         };
         Ok(timer)
@@ -253,7 +265,7 @@ impl Timer {
     /// in the [`Timer`] struct. This means there are no side-effects to this
     /// except to keep track of when the timer has been called.
     fn rcl_call(&self) -> Result<(), RclrsError> {
-        let mut rcl_timer = self.rcl_timer.lock().unwrap();
+        let mut rcl_timer = self.handle.rcl_timer.lock().unwrap();
         unsafe { rcl_timer_call(&mut *rcl_timer) }.ok()
     }
 
@@ -268,16 +280,18 @@ impl Timer {
 }
 
 /// 'Drop' trait implementation to be able to release the resources
-impl Drop for rcl_timer_t {
+impl Drop for TimerHandle {
     fn drop(&mut self) {
-        // SAFETY: No preconditions for this function
-        unsafe { rcl_timer_fini(&mut *self) };
+        let _lifecycle = ENTITY_LIFECYCLE_MUTEX.lock().unwrap();
+        // SAFETY: The lifecycle mutex is locked and the clock for the timer
+        // must still be valid because TimerHandle keeps it alive.
+        unsafe { rcl_timer_fini(&mut *self.rcl_timer.lock().unwrap()) };
     }
 }
 
 impl PartialEq for Timer {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.rcl_timer, &other.rcl_timer)
+        Arc::ptr_eq(&self.handle.rcl_timer, &other.handle.rcl_timer)
     }
 }
 
@@ -334,7 +348,7 @@ mod tests {
     fn test_new_with_source_clock() {
         let (clock, source) = Clock::with_source();
         // No manual time set, it should default to 0
-        assert!(clock.now().nsec == 0);
+        assert_eq!(clock.now().nsec, 0);
         let set_time = 1234i64;
         source.set_ros_time_override(set_time);
 
