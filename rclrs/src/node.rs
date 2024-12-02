@@ -576,7 +576,10 @@ mod tests {
     use super::*;
     use crate::test_helpers::*;
 
-    use std::time::Duration;
+    use std::{
+        time::{Duration, Instant},
+        sync::{Arc, atomic::{AtomicU64, Ordering}},
+    };
 
     #[test]
     fn traits() {
@@ -630,16 +633,62 @@ mod tests {
     }
 
     #[test]
-    fn test_create_timer_without_clock_source() -> Result<(), RclrsError> {
+    fn test_create_timer() -> Result<(), RclrsError> {
         let context = Context::new([])?;
         let node = NodeBuilder::new(&context, "node_with_timer")
             .namespace("test_create_timer")
             .build()?;
 
-        let _timer = node.create_timer_repeating(Duration::from_millis(1), || {})?;
+        let repeat_counter = Arc::new(AtomicU64::new(0));
+        let repeat_counter_check = Arc::clone(&repeat_counter);
+        let _repeating_timer = node.create_timer_repeating(
+            Duration::from_millis(1),
+            move || { repeat_counter.fetch_add(1, Ordering::AcqRel); },
+        )?;
         assert_eq!(node.live_timers().len(), 1);
 
+        let oneshot_counter = Arc::new(AtomicU64::new(0));
+        let oneshot_counter_check = Arc::clone(&oneshot_counter);
+        let _oneshot_timer = node.create_timer_oneshot(
+            Duration::from_millis(1)
+            .node_time(),
+            move || { oneshot_counter.fetch_add(1, Ordering::AcqRel); },
+        )?;
+
+        let oneshot_resetting_counter = Arc::new(AtomicU64::new(0));
+        let oneshot_resetting_counter_check = Arc::clone(&oneshot_resetting_counter);
+        let _oneshot_resetting_timer = node.create_timer_oneshot(
+            Duration::from_millis(1),
+            move |timer: &Timer| {
+                recursive_oneshot(timer, oneshot_resetting_counter);
+            },
+        );
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(10) {
+            crate::spin_once(Arc::clone(&node), Some(Duration::from_millis(10)))?;
+        }
+
+        // We give a little leeway to the exact count since timers won't always
+        // be triggered perfectly. The important thing is that it was
+        // successfully called repeatedly.
+        assert!(repeat_counter_check.load(Ordering::Acquire) > 5);
+        assert!(oneshot_resetting_counter_check.load(Ordering::Acquire) > 5);
+
+        // This should only have been triggered exactly once
+        assert_eq!(oneshot_counter_check.load(Ordering::Acquire), 1);
+
         Ok(())
+    }
+
+    fn recursive_oneshot(
+        timer: &Timer,
+        counter: Arc<AtomicU64>,
+    ) {
+        counter.fetch_add(1, Ordering::AcqRel);
+        timer.set_oneshot(move |timer: &Timer| {
+            recursive_oneshot(timer, counter);
+        });
     }
 
     #[test]
