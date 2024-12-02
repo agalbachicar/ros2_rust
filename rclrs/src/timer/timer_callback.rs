@@ -17,6 +17,7 @@ pub enum AnyTimerCallback {
 /// callbacks can take the current [`Time`] as an argument, or [`Time`], or take
 /// no argument at all.
 pub trait TimerCallRepeating<Args>: Send + 'static {
+    /// Convert a suitable object into a repeating timer callback
     fn into_repeating_timer_callback(self) -> AnyTimerCallback;
 }
 
@@ -42,6 +43,7 @@ where
 /// callbacks can take the current [`Time`] as an argument, or [`Time`], or take
 /// no argument at all.
 pub trait TimerCallOnce<Args>: Send + 'static {
+    /// Convert a suitable object into a one-shot timer callback
     fn into_oneshot_timer_callback(self) -> AnyTimerCallback;
 }
 

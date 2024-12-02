@@ -9,11 +9,15 @@ use crate::{Clock, Node};
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct TimerOptions<'a> {
+    /// The period of the timer's interval
     pub period: Duration,
+    /// The clock that the timer will reference for its intervals
     pub clock: TimerClock<'a>,
 }
 
 impl TimerOptions<'_> {
+    /// Make a new timer with a certain interval period, with all other options
+    /// as default.
     pub fn new(period: Duration) -> Self {
         Self {
             period,
@@ -22,7 +26,10 @@ impl TimerOptions<'_> {
     }
 }
 
+/// Trait to implicitly convert a suitable object into [`TimerOptions`].
 pub trait IntoTimerOptions<'a>: Sized {
+    /// Convert a suitable object into [`TimerOptions`]. This can be used on
+    /// [`Duration`] or [`TimerOptions`] itself.
     fn into_timer_options(self) -> TimerOptions<'a>;
 
     /// Use [`std::time::Instant`] for the timer. This the default so you
