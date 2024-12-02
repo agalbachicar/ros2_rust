@@ -32,6 +32,10 @@ pub enum RclrsError {
     },
     /// It was attempted to add a waitable to a wait set twice.
     AlreadyAddedToWaitSet,
+    /// A negative duration was obtained from rcl which should have been positive.
+    ///
+    /// The value represents nanoseconds.
+    NegativeDuration(i64),
 }
 
 impl Display for RclrsError {
@@ -47,6 +51,9 @@ impl Display for RclrsError {
                     f,
                     "Could not add entity to wait set because it was already added to a wait set"
                 )
+            }
+            RclrsError::NegativeDuration(duration) => {
+                write!(f, "A duration was negative when it should not have been: {duration:?}")
             }
         }
     }
@@ -80,6 +87,7 @@ impl Error for RclrsError {
             RclrsError::UnknownRclError { msg, .. } => msg.as_ref().map(|e| e as &dyn Error),
             RclrsError::StringContainsNul { err, .. } => Some(err).map(|e| e as &dyn Error),
             RclrsError::AlreadyAddedToWaitSet => None,
+            RclrsError::NegativeDuration(_) => None,
         }
     }
 }
