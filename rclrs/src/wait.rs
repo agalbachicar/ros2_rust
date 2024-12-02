@@ -465,8 +465,7 @@ impl WaitSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clock::Clock;
-    use crate::timer::*;
+    use crate::{clock::Clock, timer::*};
 
     #[test]
     fn traits() {
@@ -499,7 +498,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         )?);
 
         let mut wait_set = WaitSet::new(0, 0, 1, 0, 0, 0, &context)?;
@@ -518,7 +517,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         )?);
 
         let mut wait_set = WaitSet::new(0, 0, 1, 0, 0, 0, &context)?;

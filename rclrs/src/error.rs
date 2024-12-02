@@ -53,7 +53,10 @@ impl Display for RclrsError {
                 )
             }
             RclrsError::NegativeDuration(duration) => {
-                write!(f, "A duration was negative when it should not have been: {duration:?}")
+                write!(
+                    f,
+                    "A duration was negative when it should not have been: {duration:?}"
+                )
             }
         }
     }

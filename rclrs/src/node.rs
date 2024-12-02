@@ -13,11 +13,11 @@ use rosidl_runtime_rs::Message;
 
 pub use self::{builder::*, graph::*};
 use crate::{
-    rcl_bindings::*, Client, ClientBase, Clock, Context, ContextHandle, GuardCondition, LogParams,
-    Logger, ParameterBuilder, ParameterInterface, ParameterVariant, Parameters, Publisher,
-    QoSProfile, RclrsError, Service, ServiceBase, Subscription, SubscriptionBase,
-    SubscriptionCallback, TimeSource, Timer, IntoTimerOptions, AnyTimerCallback,
-    TimerCallRepeating, TimerCallOnce, ToLogParams, ENTITY_LIFECYCLE_MUTEX,
+    rcl_bindings::*, AnyTimerCallback, Client, ClientBase, Clock, Context, ContextHandle,
+    GuardCondition, IntoTimerOptions, LogParams, Logger, ParameterBuilder, ParameterInterface,
+    ParameterVariant, Parameters, Publisher, QoSProfile, RclrsError, Service, ServiceBase,
+    Subscription, SubscriptionBase, SubscriptionCallback, TimeSource, Timer, TimerCallOnce,
+    TimerCallRepeating, ToLogParams, ENTITY_LIFECYCLE_MUTEX,
 };
 
 // SAFETY: The functions accessing this type, including drop(), shouldn't care about the thread
@@ -636,10 +636,7 @@ mod tests {
             .namespace("test_create_timer")
             .build()?;
 
-        let _timer = node.create_timer_repeating(
-            Duration::from_millis(1),
-            || { }
-        )?;
+        let _timer = node.create_timer_repeating(Duration::from_millis(1), || {})?;
         assert_eq!(node.live_timers().len(), 1);
 
         Ok(())

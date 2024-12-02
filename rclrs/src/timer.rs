@@ -1,9 +1,6 @@
 use crate::{
-    clock::Clock,
-    context::ContextHandle,
-    error::RclrsError,
-    rcl_bindings::*,
-    ToResult, log_error, ToLogParams, ENTITY_LIFECYCLE_MUTEX,
+    clock::Clock, context::ContextHandle, error::RclrsError, log_error, rcl_bindings::*,
+    ToLogParams, ToResult, ENTITY_LIFECYCLE_MUTEX,
 };
 // TODO: fix me when the callback type is properly defined.
 // use std::fmt::Debug;
@@ -58,7 +55,8 @@ impl Timer {
         unsafe {
             let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_period(&*rcl_timer, &mut timer_period_ns)
-        }.ok()?;
+        }
+        .ok()?;
 
         rcl_duration(timer_period_ns)
     }
@@ -76,7 +74,8 @@ impl Timer {
         unsafe {
             let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_is_canceled(&*rcl_timer, &mut is_canceled)
-        }.ok()?;
+        }
+        .ok()?;
         Ok(is_canceled)
     }
 
@@ -86,7 +85,8 @@ impl Timer {
         unsafe {
             let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_time_since_last_call(&*rcl_timer, &mut time_value_ns)
-        }.ok()?;
+        }
+        .ok()?;
 
         rcl_duration(time_value_ns)
     }
@@ -97,7 +97,8 @@ impl Timer {
         unsafe {
             let rcl_timer = self.handle.rcl_timer.lock().unwrap();
             rcl_timer_get_time_until_next_call(&*rcl_timer, &mut time_value_ns)
-        }.ok()?;
+        }
+        .ok()?;
 
         rcl_duration(time_value_ns)
     }
@@ -137,7 +138,10 @@ impl Timer {
     /// See also:
     /// * [`Self::set_oneshot`]
     /// * [`Self::remove_callback`]
-    pub fn set_repeating<Args>(&self, f: impl TimerCallRepeating<Args>) -> Option<AnyTimerCallback> {
+    pub fn set_repeating<Args>(
+        &self,
+        f: impl TimerCallRepeating<Args>,
+    ) -> Option<AnyTimerCallback> {
         self.set_callback(f.into_repeating_timer_callback())
     }
 
@@ -188,7 +192,7 @@ impl Timer {
 
         let rcl_timer = Arc::new(Mutex::new(
             // SAFETY: Zero-initializing a timer is always safe
-            unsafe { rcl_get_zero_initialized_timer() }
+            unsafe { rcl_get_zero_initialized_timer() },
         ));
 
         unsafe {
@@ -209,7 +213,8 @@ impl Timer {
                 rcl_timer_callback,
                 allocator,
             )
-        }.ok()?;
+        }
+        .ok()?;
 
         let timer = Timer {
             handle: TimerHandle { rcl_timer, clock },
@@ -249,10 +254,7 @@ impl Timer {
         }
 
         if let Err(err) = self.rcl_call() {
-            log_error!(
-                "timer",
-                "Unable to call timer: {err:?}",
-            );
+            log_error!("timer", "Unable to call timer: {err:?}",);
         }
 
         Ok(())
@@ -310,7 +312,10 @@ unsafe impl Send for rcl_timer_t {}
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use std::{thread, time, sync::atomic::{AtomicBool, Ordering}};
+    use std::{
+        sync::atomic::{AtomicBool, Ordering},
+        thread, time,
+    };
 
     #[test]
     fn traits() {
@@ -327,7 +332,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::system(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
         assert!(result.is_ok());
     }
@@ -339,7 +344,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
         assert!(result.is_ok());
     }
@@ -360,7 +365,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             clock,
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
         assert!(result.is_ok());
     }
@@ -374,7 +379,7 @@ mod tests {
             &context.handle,
             period,
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
 
         let timer = result.unwrap();
@@ -390,7 +395,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
 
         let timer = result.unwrap();
@@ -407,7 +412,7 @@ mod tests {
             &context.handle,
             Duration::from_millis(2),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
         let timer = result.unwrap();
 
@@ -432,7 +437,7 @@ mod tests {
             &context.handle,
             period,
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
+            (|| {}).into_repeating_timer_callback(),
         );
         let timer = result.unwrap();
 
@@ -453,8 +458,9 @@ mod tests {
             &context.handle,
             period,
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
-        ).unwrap();
+            (|| {}).into_repeating_timer_callback(),
+        )
+        .unwrap();
 
         // The unwrap will panic if the remaining time is negative
         timer.time_until_next_call().unwrap();
@@ -463,7 +469,10 @@ mod tests {
         thread::sleep(Duration::from_millis(3));
 
         // Now the time until next call should give an error
-        assert!(matches!(timer.time_until_next_call(), Err(RclrsError::NegativeDuration(_))));
+        assert!(matches!(
+            timer.time_until_next_call(),
+            Err(RclrsError::NegativeDuration(_))
+        ));
 
         // Reset the timer so its interval begins again
         assert!(timer.reset().is_ok());
@@ -479,8 +488,9 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
-        ).unwrap();
+            (|| {}).into_repeating_timer_callback(),
+        )
+        .unwrap();
 
         // The unwrap will panic if the remaining time is negative
         timer.time_until_next_call().unwrap();
@@ -489,7 +499,10 @@ mod tests {
         thread::sleep(time::Duration::from_micros(1500));
 
         // Now the time until the next call should give an error
-        assert!(matches!(timer.time_until_next_call(), Err(RclrsError::NegativeDuration(_))));
+        assert!(matches!(
+            timer.time_until_next_call(),
+            Err(RclrsError::NegativeDuration(_))
+        ));
 
         // The unwrap will panic if anything went wrong with the call
         timer.rcl_call().unwrap();
@@ -505,8 +518,9 @@ mod tests {
             &context.handle,
             Duration::from_millis(1),
             Clock::steady(),
-            (|| { }).into_repeating_timer_callback(),
-        ).unwrap();
+            (|| {}).into_repeating_timer_callback(),
+        )
+        .unwrap();
 
         assert!(!timer.is_ready().unwrap());
 
@@ -580,8 +594,11 @@ mod tests {
         executed: Arc<AtomicBool>,
     ) -> AnyTimerCallback {
         (move |t: Time| {
-            assert!(t.compare_with(&initial_time, |t, initial| t >= initial).unwrap());
+            assert!(t
+                .compare_with(&initial_time, |t, initial| t >= initial)
+                .unwrap());
             executed.store(true, Ordering::Release);
-        }).into_oneshot_timer_callback()
+        })
+        .into_oneshot_timer_callback()
     }
 }
