@@ -13,10 +13,11 @@ use rosidl_runtime_rs::Message;
 
 pub use self::{builder::*, graph::*};
 use crate::{
-    rcl_bindings::*, Client, ClientBase, Clock, Context, ContextHandle, GuardCondition, LogParams,
-    Logger, ParameterBuilder, ParameterInterface, ParameterVariant, Parameters, Publisher,
-    QoSProfile, RclrsError, Service, ServiceBase, Subscription, SubscriptionBase,
-    SubscriptionCallback, TimeSource, Timer, TimerCallback, ToLogParams, ENTITY_LIFECYCLE_MUTEX,
+    rcl_bindings::*, AnyTimerCallback, Client, ClientBase, Clock, Context, ContextHandle,
+    GuardCondition, IntoTimerOptions, LogParams, Logger, ParameterBuilder, ParameterInterface,
+    ParameterVariant, Parameters, Publisher, QoSProfile, RclrsError, Service, ServiceBase,
+    Subscription, SubscriptionBase, SubscriptionCallback, TimeSource, Timer, TimerCallOnce,
+    TimerCallRepeating, ToLogParams, ENTITY_LIFECYCLE_MUTEX,
 };
 
 // SAFETY: The functions accessing this type, including drop(), shouldn't care about the thread
@@ -341,28 +342,71 @@ impl Node {
         Ok(subscription)
     }
 
-    /// Creates a [`Timer`][1].
+    /// Creates a [`Timer`].
     ///
-    /// [1]: crate::Timer
+    /// For more ergonomic usage see also:
+    /// * [`Self::create_timer_repeating`]
+    /// * [`Self::create_timer_oneshot`]
+    /// * [`Self::create_timer_inert`]
+    ///
     /// TODO: make timer's lifetime depend on node's lifetime.
-    pub fn create_timer(
+    pub fn create_timer<'a>(
         &self,
-        period_ns: i64,
-        context: &Context,
-        callback: Option<TimerCallback>,
-        clock: Option<Clock>,
+        options: impl IntoTimerOptions<'a>,
+        callback: AnyTimerCallback,
     ) -> Result<Arc<Timer>, RclrsError> {
-        let clock_used = match clock {
-            Some(value) => value,
-            None => self.get_clock(),
-        };
-        let timer = Timer::new(&clock_used, &context, period_ns, callback)?;
+        let options = options.into_timer_options();
+        let clock = options.clock.as_clock(self);
+
+        let timer = Timer::new(&self.handle.context_handle, options.period, clock, callback)?;
         let timer = Arc::new(timer);
         self.timers_mtx
             .lock()
             .unwrap()
             .push(Arc::downgrade(&timer) as Weak<Timer>);
         Ok(timer)
+    }
+
+    /// Create a [`Timer`] with a repeating callback.
+    ///
+    /// See also:
+    /// * [`Self::create_timer_oneshot`]
+    /// * [`Self::create_timer_inert`]
+    pub fn create_timer_repeating<'a, Args>(
+        &self,
+        options: impl IntoTimerOptions<'a>,
+        callback: impl TimerCallRepeating<Args>,
+    ) -> Result<Arc<Timer>, RclrsError> {
+        self.create_timer(options, callback.into_repeating_timer_callback())
+    }
+
+    /// Create a [`Timer`] whose callback will be triggered once after the period
+    /// of the timer has elapsed. After that you will need to use
+    /// [`Timer::set_callback`] or a related method or else nothing will happen
+    /// the following times that the `Timer` elapses.
+    ///
+    /// See also:
+    /// * [`Self::create_timer_repeating`]
+    /// * [`Self::create_time_inert`]
+    pub fn create_timer_oneshot<'a, Args>(
+        &self,
+        options: impl IntoTimerOptions<'a>,
+        callback: impl TimerCallOnce<Args>,
+    ) -> Result<Arc<Timer>, RclrsError> {
+        self.create_timer(options, callback.into_oneshot_timer_callback())
+    }
+
+    /// Create a [`Timer`] without a callback. Nothing will happen when this
+    /// `Timer` elapses until you use [`Timer::set_callback`] or a related method.
+    ///
+    /// See also:
+    /// * [`Self::create_timer_repeating`]
+    /// * [`Self::create_timer_oneshot`]
+    pub fn create_timer_inert<'a>(
+        &self,
+        options: impl IntoTimerOptions<'a>,
+    ) -> Result<Arc<Timer>, RclrsError> {
+        self.create_timer(options, AnyTimerCallback::None)
     }
 
     /// Returns the subscriptions that have not been dropped yet.
@@ -532,6 +576,11 @@ mod tests {
     use super::*;
     use crate::test_helpers::*;
 
+    use std::{
+        time::{Duration, Instant},
+        sync::{Arc, atomic::{AtomicU64, Ordering}},
+    };
+
     #[test]
     fn traits() {
         assert_send::<Node>();
@@ -584,18 +633,62 @@ mod tests {
     }
 
     #[test]
-    fn test_create_timer_without_clock_source() -> Result<(), RclrsError> {
-        let timer_period_ns: i64 = 1e6 as i64; // 1 millisecond.
+    fn test_create_timer() -> Result<(), RclrsError> {
         let context = Context::new([])?;
-        let dut = NodeBuilder::new(&context, "node_with_timer")
+        let node = NodeBuilder::new(&context, "node_with_timer")
             .namespace("test_create_timer")
             .build()?;
 
-        let _timer =
-            dut.create_timer(timer_period_ns, &context, Some(Box::new(move |_| {})), None)?;
-        assert_eq!(dut.live_timers().len(), 1);
+        let repeat_counter = Arc::new(AtomicU64::new(0));
+        let repeat_counter_check = Arc::clone(&repeat_counter);
+        let _repeating_timer = node.create_timer_repeating(
+            Duration::from_millis(1),
+            move || { repeat_counter.fetch_add(1, Ordering::AcqRel); },
+        )?;
+        assert_eq!(node.live_timers().len(), 1);
+
+        let oneshot_counter = Arc::new(AtomicU64::new(0));
+        let oneshot_counter_check = Arc::clone(&oneshot_counter);
+        let _oneshot_timer = node.create_timer_oneshot(
+            Duration::from_millis(1)
+            .node_time(),
+            move || { oneshot_counter.fetch_add(1, Ordering::AcqRel); },
+        )?;
+
+        let oneshot_resetting_counter = Arc::new(AtomicU64::new(0));
+        let oneshot_resetting_counter_check = Arc::clone(&oneshot_resetting_counter);
+        let _oneshot_resetting_timer = node.create_timer_oneshot(
+            Duration::from_millis(1),
+            move |timer: &Timer| {
+                recursive_oneshot(timer, oneshot_resetting_counter);
+            },
+        );
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(10) {
+            crate::spin_once(Arc::clone(&node), Some(Duration::from_millis(10)))?;
+        }
+
+        // We give a little leeway to the exact count since timers won't always
+        // be triggered perfectly. The important thing is that it was
+        // successfully called repeatedly.
+        assert!(repeat_counter_check.load(Ordering::Acquire) > 5);
+        assert!(oneshot_resetting_counter_check.load(Ordering::Acquire) > 5);
+
+        // This should only have been triggered exactly once
+        assert_eq!(oneshot_counter_check.load(Ordering::Acquire), 1);
 
         Ok(())
+    }
+
+    fn recursive_oneshot(
+        timer: &Timer,
+        counter: Arc<AtomicU64>,
+    ) {
+        counter.fetch_add(1, Ordering::AcqRel);
+        timer.set_oneshot(move |timer: &Timer| {
+            recursive_oneshot(timer, counter);
+        });
     }
 
     #[test]
