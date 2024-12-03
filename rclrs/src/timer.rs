@@ -147,7 +147,7 @@ impl Timer {
     /// See also:
     /// * [`Self::set_repeating`]
     /// * [`Self::set_oneshot`]
-    /// * [`Self::remove_callback`].
+    /// * [`Self::set_inert`].
     pub fn set_callback(&self, callback: AnyTimerCallback) -> Option<AnyTimerCallback> {
         self.callback.lock().unwrap().replace(callback)
     }
@@ -156,7 +156,7 @@ impl Timer {
     ///
     /// See also:
     /// * [`Self::set_oneshot`]
-    /// * [`Self::remove_callback`]
+    /// * [`Self::set_inert`]
     pub fn set_repeating<Args>(
         &self,
         f: impl TimerCallRepeating<Args>,
@@ -173,17 +173,21 @@ impl Timer {
     ///
     /// See also:
     /// * [`Self::set_repeating`]
-    /// * [`Self::remove_callback`]
+    /// * [`Self::set_inert`]
     pub fn set_oneshot<Args>(&self, f: impl TimerCallOnce<Args>) -> Option<AnyTimerCallback> {
         self.set_callback(f.into_oneshot_timer_callback())
     }
 
     /// Remove the callback from the timer.
     ///
+    /// This does not cancel the timer; it will continue to wake up and be
+    /// triggered at its regular period. However, nothing will happen when the
+    /// timer is triggered until you give a new callback to the timer.
+    ///
     /// You can give the timer a new callback at any time by calling:
     /// * [`Self::set_repeating`]
     /// * [`Self::set_oneshot`]
-    pub fn remove_callback(&self) -> Option<AnyTimerCallback> {
+    pub fn set_inert(&self) -> Option<AnyTimerCallback> {
         self.set_callback(AnyTimerCallback::None)
     }
 
