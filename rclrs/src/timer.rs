@@ -196,8 +196,9 @@ impl Timer {
         Ok(())
     }
 
-    /// Creates a new timer. Users should call [`Node::create_timer`] or
-    /// [`Node::create_timer_oneshot`].
+    /// Creates a new timer. Users should call one of [`Node::create_timer`],
+    /// [`Node::create_timer_repeating`], [`Node::create_timer_oneshot`], or
+    /// [`Node::create_timer_inert`].
     pub(crate) fn new(
         context: &ContextHandle,
         period: Duration,
@@ -286,7 +287,7 @@ impl Timer {
     }
 
     /// Updates the state of the rcl_timer to know that it has been called. This
-    /// should only be called by [`Self::execute`].
+    /// should only be called by [`Self::call`].
     ///
     /// The callback held by the rcl_timer is null because we store the callback
     /// in the [`Timer`] struct. This means there are no side-effects to this
@@ -530,7 +531,7 @@ mod tests {
         ));
 
         // The unwrap will panic if anything went wrong with the call
-        timer.rcl_call().unwrap();
+        timer.call().unwrap();
 
         // The unwrap will panic if the remaining time is negative
         timer.time_until_next_call().unwrap();
